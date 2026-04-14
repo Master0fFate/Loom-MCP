@@ -485,14 +485,22 @@ server.tool(
       .describe(
         "Approximate character count of reasoning that has NOT yet been woven (i.e., still in active context). Used to calculate whether a weave is overdue."
       ),
+    current_unweaved_text: z
+      .string()
+      .optional()
+      .describe(
+        "Optional raw text for the current unweaved reasoning. If provided, Loom will compute exact token count with the configured tokenizer."
+      ),
   },
-  async ({ thread_id, current_unweaved_chars }) => {
+  async ({ thread_id, current_unweaved_chars, current_unweaved_text }) => {
     const stats = getStats(thread_id);
 
     const blocks = getAllBlocks(thread_id);
     const { rawTokens: wovenRawTokens, summaryTokens: wovenSummaryTokens } = getTokenTotals(blocks);
     const savedTokens = wovenRawTokens - wovenSummaryTokens;
-    const unwovenTokens = fallbackCharsToTokens(current_unweaved_chars);
+    const unwovenTokens = current_unweaved_text
+      ? countTokens(current_unweaved_text)
+      : fallbackCharsToTokens(current_unweaved_chars);
 
     // Suggest weaving if unweaved reasoning exceeds the configured threshold
     const shouldWeave = unwovenTokens >= WEAVE_THRESHOLD_TOKENS;
@@ -513,6 +521,9 @@ server.tool(
               woven_summary_tokens: wovenSummaryTokens,
               tokens_saved_by_loom: savedTokens,
               current_unweaved_tokens: unwovenTokens,
+              current_unweaved_token_method: current_unweaved_text
+                ? "model_tokenizer"
+                : "chars_div_4_fallback",
               weave_threshold_tokens: WEAVE_THRESHOLD_TOKENS,
               should_weave_now: shouldWeave,
               recommendation,

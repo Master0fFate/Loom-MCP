@@ -36,7 +36,7 @@ test("listThreads and deleteThread manage thread lifecycle", () => {
 
   assert.ok(entry);
   assert.equal(entry?.block_count, 2);
-  assert.ok(entry?.last_created_at >= entry?.first_created_at!);
+  assert.ok(entry?.last_created_at >= entry?.first_created_at);
 
   const deletedCount = dbModule.deleteThread(threadId);
   assert.equal(deletedCount, 2);
