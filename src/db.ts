@@ -152,6 +152,7 @@ export function listThreads(): ThreadOverview[] {
 
 /**
  * Deletes all blocks belonging to a thread and returns the number of rows removed.
+ * Callers should enforce an explicit user confirmation before invoking this helper.
  */
 export function deleteThread(thread_id: string): number {
   const result = stmtDeleteThread.run(thread_id);
