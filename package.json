@@ -1,0 +1,37 @@
+{
+  "name": "loom-mcp",
+  "version": "1.0.0",
+  "description": "An MCP server for Recursive Reasoning Compaction and SFT data generation. Implements a tool-based abstraction of the Microsoft Memento architecture for long-form LLM logic.",
+  "main": "dist/index.js",
+  "bin": {
+    "loom-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Master0fFate/Loom-MCP.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Master0fFate/Loom-MCP/issues"
+  },
+  "homepage": "https://github.com/Master0fFate/Loom-MCP#readme",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "better-sqlite3": "^12.9.0",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^25.6.0",
+    "@types/uuid": "^10.0.0",
+    "typescript": "^6.0.2"
+  }
+}
