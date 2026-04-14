@@ -46,6 +46,20 @@ function formatMementoBlock(raw_reasoning: string, summary: string): string {
   );
 }
 
+function getTokenTotals(blocks: { raw_reasoning: string; summary: string }[]): {
+  rawTokens: number;
+  summaryTokens: number;
+} {
+  return blocks.reduce(
+    (totals, block) => {
+      totals.rawTokens += countTokens(block.raw_reasoning);
+      totals.summaryTokens += countTokens(block.summary);
+      return totals;
+    },
+    { rawTokens: 0, summaryTokens: 0 }
+  );
+}
+
 /** Token threshold above which loom_prune_check will recommend a weave (~2000 chars). */
 const WEAVE_THRESHOLD_TOKENS = parseInt(
   process.env.LOOM_WEAVE_THRESHOLD_TOKENS ?? "500",
@@ -325,8 +339,7 @@ server.tool(
 
     fs.writeFileSync(filepath, JSON.stringify(sftRecord) + "\n", "utf-8");
 
-    const totalRawTokens = blocks.reduce((total, block) => total + countTokens(block.raw_reasoning), 0);
-    const totalSummaryTokens = blocks.reduce((total, block) => total + countTokens(block.summary), 0);
+    const { rawTokens: totalRawTokens, summaryTokens: totalSummaryTokens } = getTokenTotals(blocks);
 
     return {
       content: [
@@ -477,8 +490,7 @@ server.tool(
     const stats = getStats(thread_id);
 
     const blocks = getAllBlocks(thread_id);
-    const wovenRawTokens = blocks.reduce((total, block) => total + countTokens(block.raw_reasoning), 0);
-    const wovenSummaryTokens = blocks.reduce((total, block) => total + countTokens(block.summary), 0);
+    const { rawTokens: wovenRawTokens, summaryTokens: wovenSummaryTokens } = getTokenTotals(blocks);
     const savedTokens = wovenRawTokens - wovenSummaryTokens;
     const unwovenTokens = fallbackCharsToTokens(current_unweaved_chars);
 
@@ -530,8 +542,7 @@ server.resource(
     const stats = getStats(id);
 
     const blocks = getAllBlocks(id);
-    const wovenRawTokens = blocks.reduce((total, block) => total + countTokens(block.raw_reasoning), 0);
-    const wovenSummaryTokens = blocks.reduce((total, block) => total + countTokens(block.summary), 0);
+    const { rawTokens: wovenRawTokens, summaryTokens: wovenSummaryTokens } = getTokenTotals(blocks);
     const savedTokens = wovenRawTokens - wovenSummaryTokens;
     const compressionRatio =
       wovenRawTokens > 0 ? (wovenSummaryTokens / wovenRawTokens).toFixed(3) : "N/A";
