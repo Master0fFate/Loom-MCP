@@ -31,7 +31,10 @@ The exported reasoning traces follow the structural markers from the [Microsoft 
 |------|-------------|
 | `loom_weave_block` | Saves a raw reasoning block and its concise Warp summary. Frees cognitive load for the next step. |
 | `loom_view_tapestry` | Returns all Warp summaries in chronological order for a thread. |
+| `loom_list_threads` | Lists all known threads with block counts and timestamps. |
+| `loom_delete_thread` | Deletes all blocks for a specific thread (requires confirmation flag). |
 | `loom_export_memento_dataset` | Finalizes the session and exports all blocks to a versioned `.jsonl` file in Memento format. |
+| `loom_read_export` | Reads an exported `.jsonl` file via MCP for in-protocol verification/retrieval. |
 | `loom_prune_check` | Calculates reasoning density and advises when to call `loom_weave_block`. |
 
 ## Resources
@@ -59,6 +62,8 @@ npm run build
 ```
 
 The server uses SQLite and stores its database at `~/.loom-mcp/loom.db` by default. Override this by setting the `LOOM_DATA_DIR` environment variable.
+
+Token counts are computed using `js-tiktoken` (default model: `gpt-4o-mini`). Override model selection with `LOOM_TOKENIZER_MODEL`.
 
 ---
 
@@ -91,6 +96,16 @@ See also the included [`claude_desktop_config.json`](./claude_desktop_config.jso
 5. When finished → call loom_export_memento_dataset to create the SFT record
 ```
 
+## Warp Summary Quality Guide
+
+High-density Warp summaries preserve decisions, assumptions, and outcomes:
+
+- **Good Warp:** "Selected Dijkstra over BFS because weighted edges were introduced in step 3; complexity remains acceptable (O((V+E) log V)); next step is edge-case validation for disconnected nodes."
+
+Low-density summaries lose reasoning value:
+
+- **Bad Warp:** "Thought about graph options and picked one. Will continue."
+
 ---
 
 ## Data Format
@@ -109,4 +124,3 @@ Exported `.jsonl` files (stored in `~/.loom-mcp/exports/`) follow this schema:
 ```
 
 ---
-

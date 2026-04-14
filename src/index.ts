@@ -14,16 +14,20 @@ import * as fs from "fs";
 import * as path from "path";
 import { v4 as uuidv4 } from "uuid";
 import { z } from "zod";
-import { insertBlock, getSummaries, getAllBlocks, getStats, EXPORTS_DIR } from "./db.js";
+import {
+  insertBlock,
+  getSummaries,
+  getAllBlocks,
+  getStats,
+  listThreads,
+  deleteThread,
+  EXPORTS_DIR,
+} from "./db.js";
+import { countTokens, fallbackCharsToTokens } from "./tokenizer.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/** Rough character-to-token approximation (GPT-style ~4 chars / token). */
-function charsToTokens(chars: number): number {
-  return Math.round(chars / 4);
-}
 
 /**
  * Formats a reasoning block in the Memento structural marker format.
@@ -87,8 +91,8 @@ server.tool(
   },
   async ({ thread_id, raw_reasoning, summary }) => {
     const blockIndex = insertBlock(thread_id, raw_reasoning, summary);
-    const rawTokens = charsToTokens(raw_reasoning.length);
-    const summaryTokens = charsToTokens(summary.length);
+    const rawTokens = countTokens(raw_reasoning);
+    const summaryTokens = countTokens(summary);
     const savedTokens = rawTokens - summaryTokens;
 
     return {
@@ -104,6 +108,88 @@ server.tool(
               summary_tokens_retained: summaryTokens,
               tokens_freed: Math.max(0, savedTokens),
               message: `Block ${blockIndex} woven successfully. ${Math.max(0, savedTokens)} tokens freed from active context.`,
+            },
+            null,
+            2
+          ),
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
+  "loom_list_threads",
+  "Lists all known reasoning threads and their block counts so you can manage long-term storage.",
+  {},
+  async () => {
+    const threads = listThreads().map((thread) => ({
+      thread_id: thread.thread_id,
+      block_count: thread.block_count,
+      first_created_at: new Date(thread.first_created_at * 1000).toISOString(),
+      last_created_at: new Date(thread.last_created_at * 1000).toISOString(),
+    }));
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              thread_count: threads.length,
+              threads,
+            },
+            null,
+            2
+          ),
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
+  "loom_delete_thread",
+  "Deletes all blocks for a thread. Use for cleanup/archival after confirming the thread is no longer needed.",
+  {
+    thread_id: z.string().min(1).describe("Thread ID to delete."),
+    confirm: z
+      .boolean()
+      .default(false)
+      .describe("Safety flag. Must be true to confirm deletion."),
+  },
+  async ({ thread_id, confirm }) => {
+    if (!confirm) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                status: "aborted",
+                thread_id,
+                message: "Deletion aborted. Set confirm=true to delete this thread.",
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    const deletedBlocks = deleteThread(thread_id);
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              status: "deleted",
+              thread_id,
+              deleted_blocks: deletedBlocks,
             },
             null,
             2
@@ -239,9 +325,8 @@ server.tool(
 
     fs.writeFileSync(filepath, JSON.stringify(sftRecord) + "\n", "utf-8");
 
-    const stats = getStats(thread_id);
-    const totalRawTokens = charsToTokens(stats.total_raw_chars);
-    const totalSummaryTokens = charsToTokens(stats.total_summary_chars);
+    const totalRawTokens = blocks.reduce((total, block) => total + countTokens(block.raw_reasoning), 0);
+    const totalSummaryTokens = blocks.reduce((total, block) => total + countTokens(block.summary), 0);
 
     return {
       content: [
@@ -270,6 +355,103 @@ server.tool(
   }
 );
 
+server.tool(
+  "loom_read_export",
+  "Reads a previously exported Loom JSONL file from the exports directory and returns its parsed content.",
+  {
+    export_file: z
+      .string()
+      .min(1)
+      .describe("Export filename (e.g., loom-thread-123.jsonl) or full path inside the Loom exports directory."),
+  },
+  async ({ export_file }) => {
+    const baseExportsPath = path.resolve(EXPORTS_DIR);
+    const requestedPath = path.isAbsolute(export_file)
+      ? path.resolve(export_file)
+      : path.resolve(path.join(baseExportsPath, export_file));
+
+    const inExportsDir =
+      requestedPath === baseExportsPath || requestedPath.startsWith(`${baseExportsPath}${path.sep}`);
+
+    if (!inExportsDir) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                status: "error",
+                message: "Export path is outside the Loom exports directory.",
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    if (!fs.existsSync(requestedPath)) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                status: "error",
+                message: `Export file not found: ${requestedPath}`,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    const fileText = fs.readFileSync(requestedPath, "utf-8").trim();
+
+    try {
+      const parsed = JSON.parse(fileText);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                status: "ok",
+                export_file: requestedPath,
+                record: parsed,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                status: "ok",
+                export_file: requestedPath,
+                raw_jsonl: fileText,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+  }
+);
+
 /**
  * loom_prune_check
  * Analyses the reasoning density of the current session and advises whether
@@ -294,10 +476,11 @@ server.tool(
   async ({ thread_id, current_unweaved_chars }) => {
     const stats = getStats(thread_id);
 
-    const wovenRawTokens = charsToTokens(stats.total_raw_chars);
-    const wovenSummaryTokens = charsToTokens(stats.total_summary_chars);
+    const blocks = getAllBlocks(thread_id);
+    const wovenRawTokens = blocks.reduce((total, block) => total + countTokens(block.raw_reasoning), 0);
+    const wovenSummaryTokens = blocks.reduce((total, block) => total + countTokens(block.summary), 0);
     const savedTokens = wovenRawTokens - wovenSummaryTokens;
-    const unwovenTokens = charsToTokens(current_unweaved_chars);
+    const unwovenTokens = fallbackCharsToTokens(current_unweaved_chars);
 
     // Suggest weaving if unweaved reasoning exceeds the configured threshold
     const shouldWeave = unwovenTokens >= WEAVE_THRESHOLD_TOKENS;
@@ -346,8 +529,9 @@ server.resource(
     const id = Array.isArray(thread_id) ? thread_id[0] : thread_id;
     const stats = getStats(id);
 
-    const wovenRawTokens = charsToTokens(stats.total_raw_chars);
-    const wovenSummaryTokens = charsToTokens(stats.total_summary_chars);
+    const blocks = getAllBlocks(id);
+    const wovenRawTokens = blocks.reduce((total, block) => total + countTokens(block.raw_reasoning), 0);
+    const wovenSummaryTokens = blocks.reduce((total, block) => total + countTokens(block.summary), 0);
     const savedTokens = wovenRawTokens - wovenSummaryTokens;
     const compressionRatio =
       wovenRawTokens > 0 ? (wovenSummaryTokens / wovenRawTokens).toFixed(3) : "N/A";

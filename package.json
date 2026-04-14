@@ -8,6 +8,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "test": "npm run build && node --test dist/test/**/*.test.js",
     "start": "node dist/index.js",
     "dev": "tsc --watch"
   },
@@ -26,6 +27,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "better-sqlite3": "^12.9.0",
+    "js-tiktoken": "^1.0.21",
     "uuid": "^13.0.0"
   },
   "devDependencies": {
