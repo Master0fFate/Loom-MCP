@@ -13,8 +13,9 @@ before(async () => {
 });
 
 test("insertBlock increments per thread", () => {
-  const threadA = `thread-a-${Date.now()}-main`;
-  const threadB = `thread-b-${Date.now()}-secondary`;
+  const now = Date.now();
+  const threadA = `thread-a-${now}`;
+  const threadB = `thread-b-${now}`;
 
   const index0 = dbModule.insertBlock(threadA, "reasoning one", "summary one");
   const index1 = dbModule.insertBlock(threadA, "reasoning two", "summary two");

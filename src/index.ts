@@ -451,8 +451,9 @@ server.tool(
             type: "text",
             text: JSON.stringify(
               {
-                status: "ok",
+                status: "error",
                 export_file: requestedPath,
+                message: "Export exists but could not be parsed as a single JSON object.",
                 raw_jsonl: fileText,
               },
               null,
@@ -460,6 +461,7 @@ server.tool(
             ),
           },
         ],
+        isError: true,
       };
     }
   }

@@ -100,7 +100,7 @@ See also the included [`claude_desktop_config.json`](./claude_desktop_config.jso
 
 High-density Warp summaries preserve decisions, assumptions, and outcomes:
 
-- **Good Warp:** "Selected Dijkstra over BFS because weighted edges were introduced in step 3; complexity remains acceptable (O((V+E) log V)); next step is edge-case validation for disconnected nodes."
+- **Good Warp:** "Selected Dijkstra over BFS because weighted edges were introduced in step 3; complexity remains acceptable (O((V + E) log V)); next step is edge-case validation for disconnected nodes."
 
 Low-density summaries lose reasoning value:
 

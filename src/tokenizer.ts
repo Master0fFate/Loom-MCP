@@ -1,7 +1,17 @@
 import { encodingForModel, getEncoding, Tiktoken } from "js-tiktoken";
 
-const DEFAULT_MODEL = process.env.LOOM_TOKENIZER_MODEL ?? "gpt-4o-mini";
+const MODEL_FROM_ENV = process.env.LOOM_TOKENIZER_MODEL ?? "gpt-4o-mini";
 const FALLBACK_ENCODING = "cl100k_base";
+const SUPPORTED_MODELS = ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"] as const;
+type SupportedModel = (typeof SUPPORTED_MODELS)[number];
+
+function isSupportedModel(model: string): model is SupportedModel {
+  return (SUPPORTED_MODELS as readonly string[]).includes(model);
+}
+
+const TOKENIZER_MODEL: SupportedModel | null = isSupportedModel(MODEL_FROM_ENV)
+  ? MODEL_FROM_ENV
+  : null;
 
 let encoder: Tiktoken | null = null;
 
@@ -18,7 +28,7 @@ function getEncoder(): Tiktoken {
   }
 
   try {
-    encoder = encodingForModel(DEFAULT_MODEL as Parameters<typeof encodingForModel>[0]);
+    encoder = TOKENIZER_MODEL ? encodingForModel(TOKENIZER_MODEL) : getEncoding(FALLBACK_ENCODING);
     return encoder;
   } catch {
     encoder = getEncoding(FALLBACK_ENCODING);
