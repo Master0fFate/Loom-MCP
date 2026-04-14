@@ -110,6 +110,3 @@ Exported `.jsonl` files (stored in `~/.loom-mcp/exports/`) follow this schema:
 
 ---
 
-## License
-
-ISC
