@@ -14,16 +14,20 @@ import * as fs from "fs";
 import * as path from "path";
 import { v4 as uuidv4 } from "uuid";
 import { z } from "zod";
-import { insertBlock, getSummaries, getAllBlocks, getStats, EXPORTS_DIR } from "./db.js";
+import {
+  insertBlock,
+  getSummaries,
+  getAllBlocks,
+  getStats,
+  listThreads,
+  deleteThread,
+  EXPORTS_DIR,
+} from "./db.js";
+import { countTokens, fallbackCharsToTokens } from "./tokenizer.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/** Rough character-to-token approximation (GPT-style ~4 chars / token). */
-function charsToTokens(chars: number): number {
-  return Math.round(chars / 4);
-}
 
 /**
  * Formats a reasoning block in the Memento structural marker format.
@@ -39,6 +43,20 @@ function formatMementoBlock(raw_reasoning: string, summary: string): string {
     `<|block_start|>${raw_reasoning}<|block_end|>\n` +
     `<|summary_start|>${summary}<|summary_end|>\n` +
     "</think>"
+  );
+}
+
+function getTokenTotals(blocks: { raw_reasoning: string; summary: string }[]): {
+  rawTokens: number;
+  summaryTokens: number;
+} {
+  return blocks.reduce(
+    (totals, block) => {
+      totals.rawTokens += countTokens(block.raw_reasoning);
+      totals.summaryTokens += countTokens(block.summary);
+      return totals;
+    },
+    { rawTokens: 0, summaryTokens: 0 }
   );
 }
 
@@ -87,8 +105,8 @@ server.tool(
   },
   async ({ thread_id, raw_reasoning, summary }) => {
     const blockIndex = insertBlock(thread_id, raw_reasoning, summary);
-    const rawTokens = charsToTokens(raw_reasoning.length);
-    const summaryTokens = charsToTokens(summary.length);
+    const rawTokens = countTokens(raw_reasoning);
+    const summaryTokens = countTokens(summary);
     const savedTokens = rawTokens - summaryTokens;
 
     return {
@@ -104,6 +122,88 @@ server.tool(
               summary_tokens_retained: summaryTokens,
               tokens_freed: Math.max(0, savedTokens),
               message: `Block ${blockIndex} woven successfully. ${Math.max(0, savedTokens)} tokens freed from active context.`,
+            },
+            null,
+            2
+          ),
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
+  "loom_list_threads",
+  "Lists all known reasoning threads and their block counts so you can manage long-term storage.",
+  {},
+  async () => {
+    const threads = listThreads().map((thread) => ({
+      thread_id: thread.thread_id,
+      block_count: thread.block_count,
+      first_created_at: new Date(thread.first_created_at * 1000).toISOString(),
+      last_created_at: new Date(thread.last_created_at * 1000).toISOString(),
+    }));
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              thread_count: threads.length,
+              threads,
+            },
+            null,
+            2
+          ),
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
+  "loom_delete_thread",
+  "Deletes all blocks for a thread. Use for cleanup/archival after confirming the thread is no longer needed.",
+  {
+    thread_id: z.string().min(1).describe("Thread ID to delete."),
+    confirm: z
+      .boolean()
+      .default(false)
+      .describe("Safety flag. Must be true to confirm deletion."),
+  },
+  async ({ thread_id, confirm }) => {
+    if (!confirm) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                status: "aborted",
+                thread_id,
+                message: "Deletion aborted. Set confirm=true to delete this thread.",
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    const deletedBlocks = deleteThread(thread_id);
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              status: "deleted",
+              thread_id,
+              deleted_blocks: deletedBlocks,
             },
             null,
             2
@@ -239,9 +339,7 @@ server.tool(
 
     fs.writeFileSync(filepath, JSON.stringify(sftRecord) + "\n", "utf-8");
 
-    const stats = getStats(thread_id);
-    const totalRawTokens = charsToTokens(stats.total_raw_chars);
-    const totalSummaryTokens = charsToTokens(stats.total_summary_chars);
+    const { rawTokens: totalRawTokens, summaryTokens: totalSummaryTokens } = getTokenTotals(blocks);
 
     return {
       content: [
@@ -270,6 +368,105 @@ server.tool(
   }
 );
 
+server.tool(
+  "loom_read_export",
+  "Reads a previously exported Loom JSONL file from the exports directory and returns its parsed content.",
+  {
+    export_file: z
+      .string()
+      .min(1)
+      .describe("Export filename (e.g., loom-thread-123.jsonl) or full path inside the Loom exports directory."),
+  },
+  async ({ export_file }) => {
+    const baseExportsPath = path.resolve(EXPORTS_DIR);
+    const requestedPath = path.isAbsolute(export_file)
+      ? path.resolve(export_file)
+      : path.resolve(path.join(baseExportsPath, export_file));
+
+    const inExportsDir =
+      requestedPath === baseExportsPath || requestedPath.startsWith(`${baseExportsPath}${path.sep}`);
+
+    if (!inExportsDir) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                status: "error",
+                message: "Export path is outside the Loom exports directory.",
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    if (!fs.existsSync(requestedPath)) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                status: "error",
+                message: `Export file not found: ${requestedPath}`,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    const fileText = fs.readFileSync(requestedPath, "utf-8").trim();
+
+    try {
+      const parsed = JSON.parse(fileText);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                status: "ok",
+                export_file: requestedPath,
+                record: parsed,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                status: "error",
+                export_file: requestedPath,
+                message: "Export exists but could not be parsed as a single JSON object.",
+                raw_jsonl: fileText,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
 /**
  * loom_prune_check
  * Analyses the reasoning density of the current session and advises whether
@@ -283,21 +480,69 @@ server.tool(
       .string()
       .min(1)
       .describe("The thread ID to analyse."),
+    current_unwoven_chars: z
+      .number()
+      .int()
+      .nonnegative()
+      .optional()
+      .describe(
+        "Approximate character count of reasoning that has NOT yet been woven (i.e., still in active context). Used when raw text is unavailable."
+      ),
     current_unweaved_chars: z
       .number()
       .int()
       .nonnegative()
+      .optional()
+      .describe("Deprecated alias for current_unwoven_chars."),
+    current_unwoven_text: z
+      .string()
+      .optional()
       .describe(
-        "Approximate character count of reasoning that has NOT yet been woven (i.e., still in active context). Used to calculate whether a weave is overdue."
+        "Optional raw text for the current unweaved reasoning. If provided, Loom will compute exact token count with the configured tokenizer."
       ),
+    current_unweaved_text: z
+      .string()
+      .optional()
+      .describe("Deprecated alias for current_unwoven_text."),
   },
-  async ({ thread_id, current_unweaved_chars }) => {
+  async ({
+    thread_id,
+    current_unwoven_chars,
+    current_unweaved_chars,
+    current_unwoven_text,
+    current_unweaved_text,
+  }) => {
+    const unwovenText = current_unwoven_text ?? current_unweaved_text;
+    const unwovenChars = current_unwoven_chars ?? current_unweaved_chars;
+
+    if (!unwovenText && unwovenChars === undefined) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                status: "error",
+                message:
+                  "Provide either current_unwoven_text (preferred) or current_unwoven_chars.",
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+
     const stats = getStats(thread_id);
 
-    const wovenRawTokens = charsToTokens(stats.total_raw_chars);
-    const wovenSummaryTokens = charsToTokens(stats.total_summary_chars);
+    const blocks = getAllBlocks(thread_id);
+    const { rawTokens: wovenRawTokens, summaryTokens: wovenSummaryTokens } = getTokenTotals(blocks);
     const savedTokens = wovenRawTokens - wovenSummaryTokens;
-    const unwovenTokens = charsToTokens(current_unweaved_chars);
+    const unwovenTokens = unwovenText
+      ? countTokens(unwovenText)
+      : fallbackCharsToTokens(unwovenChars ?? 0);
 
     // Suggest weaving if unweaved reasoning exceeds the configured threshold
     const shouldWeave = unwovenTokens >= WEAVE_THRESHOLD_TOKENS;
@@ -317,7 +562,8 @@ server.tool(
               woven_raw_tokens: wovenRawTokens,
               woven_summary_tokens: wovenSummaryTokens,
               tokens_saved_by_loom: savedTokens,
-              current_unweaved_tokens: unwovenTokens,
+              current_unwoven_tokens: unwovenTokens,
+              current_unwoven_token_method: unwovenText ? "model_tokenizer" : "chars_div_4_fallback",
               weave_threshold_tokens: WEAVE_THRESHOLD_TOKENS,
               should_weave_now: shouldWeave,
               recommendation,
@@ -346,8 +592,8 @@ server.resource(
     const id = Array.isArray(thread_id) ? thread_id[0] : thread_id;
     const stats = getStats(id);
 
-    const wovenRawTokens = charsToTokens(stats.total_raw_chars);
-    const wovenSummaryTokens = charsToTokens(stats.total_summary_chars);
+    const blocks = getAllBlocks(id);
+    const { rawTokens: wovenRawTokens, summaryTokens: wovenSummaryTokens } = getTokenTotals(blocks);
     const savedTokens = wovenRawTokens - wovenSummaryTokens;
     const compressionRatio =
       wovenRawTokens > 0 ? (wovenSummaryTokens / wovenRawTokens).toFixed(3) : "N/A";

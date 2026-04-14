@@ -88,6 +88,13 @@ export interface ThreadStats {
   total_summary_chars: number;
 }
 
+export interface ThreadOverview {
+  thread_id: string;
+  block_count: number;
+  first_created_at: number;
+  last_created_at: number;
+}
+
 /**
  * Appends a new block to a thread and returns the assigned block index.
  */
@@ -121,6 +128,35 @@ export function getAllBlocks(thread_id: string): Block[] {
  */
 export function getStats(thread_id: string): ThreadStats {
   return stmtStats.get(thread_id) as ThreadStats;
+}
+
+const stmtListThreads = db.prepare(
+  `SELECT
+     thread_id,
+     COUNT(*) AS block_count,
+     MIN(created_at) AS first_created_at,
+     MAX(created_at) AS last_created_at
+   FROM blocks
+   GROUP BY thread_id
+   ORDER BY last_created_at DESC`
+);
+
+const stmtDeleteThread = db.prepare<[string]>(`DELETE FROM blocks WHERE thread_id = ?`);
+
+/**
+ * Returns all known threads with lightweight stats.
+ */
+export function listThreads(): ThreadOverview[] {
+  return stmtListThreads.all() as ThreadOverview[];
+}
+
+/**
+ * Deletes all blocks belonging to a thread and returns the number of rows removed.
+ * Callers should enforce an explicit user confirmation before invoking this helper.
+ */
+export function deleteThread(thread_id: string): number {
+  const result = stmtDeleteThread.run(thread_id);
+  return result.changes;
 }
 
 export default db;
