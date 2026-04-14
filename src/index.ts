@@ -480,29 +480,69 @@ server.tool(
       .string()
       .min(1)
       .describe("The thread ID to analyse."),
+    current_unwoven_chars: z
+      .number()
+      .int()
+      .nonnegative()
+      .optional()
+      .describe(
+        "Approximate character count of reasoning that has NOT yet been woven (i.e., still in active context). Used when raw text is unavailable."
+      ),
     current_unweaved_chars: z
       .number()
       .int()
       .nonnegative()
-      .describe(
-        "Approximate character count of reasoning that has NOT yet been woven (i.e., still in active context). Used to calculate whether a weave is overdue."
-      ),
-    current_unweaved_text: z
+      .optional()
+      .describe("Deprecated alias for current_unwoven_chars."),
+    current_unwoven_text: z
       .string()
       .optional()
       .describe(
         "Optional raw text for the current unweaved reasoning. If provided, Loom will compute exact token count with the configured tokenizer."
       ),
+    current_unweaved_text: z
+      .string()
+      .optional()
+      .describe("Deprecated alias for current_unwoven_text."),
   },
-  async ({ thread_id, current_unweaved_chars, current_unweaved_text }) => {
+  async ({
+    thread_id,
+    current_unwoven_chars,
+    current_unweaved_chars,
+    current_unwoven_text,
+    current_unweaved_text,
+  }) => {
+    const unwovenText = current_unwoven_text ?? current_unweaved_text;
+    const unwovenChars = current_unwoven_chars ?? current_unweaved_chars;
+
+    if (!unwovenText && unwovenChars === undefined) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                status: "error",
+                message:
+                  "Provide either current_unwoven_text (preferred) or current_unwoven_chars.",
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+
     const stats = getStats(thread_id);
 
     const blocks = getAllBlocks(thread_id);
     const { rawTokens: wovenRawTokens, summaryTokens: wovenSummaryTokens } = getTokenTotals(blocks);
     const savedTokens = wovenRawTokens - wovenSummaryTokens;
-    const unwovenTokens = current_unweaved_text
-      ? countTokens(current_unweaved_text)
-      : fallbackCharsToTokens(current_unweaved_chars);
+    const unwovenTokens = unwovenText
+      ? countTokens(unwovenText)
+      : fallbackCharsToTokens(unwovenChars ?? 0);
 
     // Suggest weaving if unweaved reasoning exceeds the configured threshold
     const shouldWeave = unwovenTokens >= WEAVE_THRESHOLD_TOKENS;
@@ -522,10 +562,8 @@ server.tool(
               woven_raw_tokens: wovenRawTokens,
               woven_summary_tokens: wovenSummaryTokens,
               tokens_saved_by_loom: savedTokens,
-              current_unweaved_tokens: unwovenTokens,
-              current_unweaved_token_method: current_unweaved_text
-                ? "model_tokenizer"
-                : "chars_div_4_fallback",
+              current_unwoven_tokens: unwovenTokens,
+              current_unwoven_token_method: unwovenText ? "model_tokenizer" : "chars_div_4_fallback",
               weave_threshold_tokens: WEAVE_THRESHOLD_TOKENS,
               should_weave_now: shouldWeave,
               recommendation,
