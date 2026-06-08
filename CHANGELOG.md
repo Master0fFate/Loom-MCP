@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.1 - 2026-06-08
+
+### Changed
+
+- Token counting is now encoding-first instead of model-name-first.
+- Default local tokenizer encoding changed to `o200k_base` with `cl100k_base` fallback.
+- `LOOM_TOKENIZER_MODEL` remains as a backwards-compatible alias, but docs now recommend `LOOM_TOKENIZER_ENCODING`.
+- README now explicitly states that tokenization is local and does not use an API key or hosted model.
+
 ## 1.1.0 - 2026-06-08
 
 ### Added

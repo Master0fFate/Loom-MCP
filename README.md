@@ -147,7 +147,8 @@ Export filenames are sanitized to stay directly inside the Loom exports director
 | Environment variable | Default | Purpose |
 | --- | --- | --- |
 | `LOOM_DATA_DIR` | `~/.loom-mcp` | SQLite database and export directory. Read at server startup. |
-| `LOOM_TOKENIZER_MODEL` | `gpt-4o-mini` | Tokenizer model for `js-tiktoken`. Falls back to `cl100k_base`. |
+| `LOOM_TOKENIZER_ENCODING` | `o200k_base` | Local `js-tiktoken` encoding. No API key or hosted model is used. Falls back to `cl100k_base`. |
+| `LOOM_TOKENIZER_MODEL` | unset | Backwards-compatible alias for older configs. Prefer `LOOM_TOKENIZER_ENCODING`. |
 | `LOOM_WEAVE_THRESHOLD_TOKENS` | `500` | Recommendation threshold used by `loom_prune_check`. |
 | `LOOM_MAX_THREAD_ID_CHARS` | `200` | Max thread ID length. |
 | `LOOM_MAX_RAW_REASONING_CHARS` | `200000` | Max raw reasoning block size per weave. |
@@ -160,6 +161,7 @@ Export filenames are sanitized to stay directly inside the Loom exports director
 Loom-MCP is local-first infrastructure, not a hosted compliance product.
 
 - No remote service is contacted by Loom-MCP.
+- Token counts are computed locally with `js-tiktoken`; tokenizer settings select an encoding, not an API model call.
 - No auth, team permissions, encryption-at-rest, or centralized retention policy is implemented.
 - Raw reasoning and exports may contain secrets or personal data if the agent writes them. Keep sensitive data out or store `LOOM_DATA_DIR` somewhere protected.
 - `loom_delete_thread` is irreversible unless you exported the thread first.

@@ -1,6 +1,6 @@
 {
   "name": "loom-mcp",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Local-first MCP memory for long-running agents: compact reasoning, recover context, and export audit/SFT traces.",
   "main": "dist/index.js",
   "bin": {

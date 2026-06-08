@@ -121,7 +121,7 @@ const WEAVE_THRESHOLD_TOKENS = parsePositiveIntEnv("LOOM_WEAVE_THRESHOLD_TOKENS"
 
 const server = new McpServer({
   name: "loom-mcp",
-  version: "1.1.0",
+  version: "1.1.1",
 });
 
 // ---------------------------------------------------------------------------
