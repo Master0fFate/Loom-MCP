@@ -1,7 +1,7 @@
 {
   "name": "loom-mcp",
-  "version": "1.0.0",
-  "description": "An MCP server for Recursive Reasoning Compaction and SFT data generation. Implements a tool-based abstraction of the Microsoft Memento architecture for long-form LLM logic.",
+  "version": "1.1.0",
+  "description": "Local-first MCP memory for long-running agents: compact reasoning, recover context, and export audit/SFT traces.",
   "main": "dist/index.js",
   "bin": {
     "loom-mcp": "dist/index.js"
@@ -9,16 +9,43 @@
   "scripts": {
     "build": "tsc",
     "test": "npm run build && node --test dist/test/**/*.test.js",
+    "smoke": "npm run build && node --test dist/test/smoke.test.js",
+    "pack:check": "npm run build && npm pack --dry-run",
     "start": "node dist/index.js",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "prepack": "npm run build"
+  },
+  "files": [
+    "dist/*.js",
+    "dist/*.js.map",
+    "dist/*.d.ts",
+    "dist/*.d.ts.map",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "SECURITY.md",
+    "docs",
+    "examples",
+    "claude_desktop_config.json"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Master0fFate/Loom-MCP.git"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "agent-memory",
+    "reasoning",
+    "memento",
+    "sqlite",
+    "sft"
+  ],
+  "author": "Master0fFate",
+  "license": "MIT",
   "type": "commonjs",
   "bugs": {
     "url": "https://github.com/Master0fFate/Loom-MCP/issues"
@@ -26,14 +53,20 @@
   "homepage": "https://github.com/Master0fFate/Loom-MCP#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "better-sqlite3": "^12.9.0",
+    "better-sqlite3": "12.9.0",
     "js-tiktoken": "^1.0.21",
-    "uuid": "^13.0.0"
+    "zod": "^4.3.6"
+  },
+  "overrides": {
+    "express-rate-limit": "^8.5.2",
+    "fast-uri": "^3.1.2",
+    "hono": "^4.12.23",
+    "ip-address": "^10.2.0",
+    "qs": "^6.15.2"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.6.0",
-    "@types/uuid": "^10.0.0",
     "typescript": "^6.0.2"
   }
 }

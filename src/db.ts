@@ -23,6 +23,7 @@ const db: BetterSQLiteDatabase = new Database(DB_PATH);
 // Enable WAL mode for better concurrent performance
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
+db.pragma("busy_timeout = 5000");
 
 // Schema initialisation
 db.exec(`
@@ -36,6 +37,36 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_blocks_thread ON blocks(thread_id, block_index);
+`);
+
+const stmtNormalizeBlocks = db.prepare<{
+  block_index: number;
+  id: number;
+}>(`UPDATE blocks SET block_index = @block_index WHERE id = @id`);
+
+const normalizeBlockIndexes = db.transaction(() => {
+  const rows = db
+    .prepare(
+      `SELECT id, thread_id
+       FROM blocks
+       ORDER BY thread_id ASC, block_index ASC, id ASC`
+    )
+    .all() as { id: number; thread_id: string }[];
+
+  const nextIndexByThread = new Map<string, number>();
+
+  for (const row of rows) {
+    const nextIndex = nextIndexByThread.get(row.thread_id) ?? 0;
+    stmtNormalizeBlocks.run({ id: row.id, block_index: nextIndex });
+    nextIndexByThread.set(row.thread_id, nextIndex + 1);
+  }
+});
+
+normalizeBlockIndexes();
+
+db.exec(`
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_blocks_thread_index_unique
+  ON blocks(thread_id, block_index);
 `);
 
 // ---------------------------------------------------------------------------
@@ -95,6 +126,15 @@ export interface ThreadOverview {
   last_created_at: number;
 }
 
+const insertBlockTransaction = db.transaction(
+  (thread_id: string, raw_reasoning: string, summary: string): number => {
+    const row = stmtMaxIndex.get(thread_id) as { max_idx: number };
+    const nextIndex = row.max_idx + 1;
+    stmtInsertBlock.run({ thread_id, block_index: nextIndex, raw_reasoning, summary });
+    return nextIndex;
+  }
+);
+
 /**
  * Appends a new block to a thread and returns the assigned block index.
  */
@@ -103,10 +143,7 @@ export function insertBlock(
   raw_reasoning: string,
   summary: string
 ): number {
-  const row = stmtMaxIndex.get(thread_id) as { max_idx: number };
-  const nextIndex = row.max_idx + 1;
-  stmtInsertBlock.run({ thread_id, block_index: nextIndex, raw_reasoning, summary });
-  return nextIndex;
+  return insertBlockTransaction(thread_id, raw_reasoning, summary);
 }
 
 /**
